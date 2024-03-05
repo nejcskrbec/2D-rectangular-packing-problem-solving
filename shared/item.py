@@ -1,6 +1,7 @@
+import uuid
+
 from shapely.geometry import Polygon, Point
 from shapely.affinity import translate, rotate
-import uuid
 
 from shared.shape import *
 

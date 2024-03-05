@@ -1,8 +1,8 @@
+import copy as cp
+
 from shapely.affinity import translate, rotate
 from shapely.geometry import Polygon
 from itertools import combinations as combs
-
-import copy
 
 class Shape:
 
@@ -28,9 +28,19 @@ class Shape:
         self.translate((point[0] - minx + self.get_centroid().x, point[1] - miny + self.get_centroid().y))
 
 
+    def place_top_left(self, point):
+        minx, miny, maxx, maxy = self.get_bounds()
+        self.translate((point[0] - minx + self.get_centroid().x, point[1] + miny - self.get_centroid().y))
+
+
     def place_bottom_right(self, point):
         minx, miny, maxx, maxy = self.get_bounds()
         self.translate((point[0] - maxx + self.get_centroid().x, point[1] - miny + self.get_centroid().y))
+
+
+    def place_top_right(self, point):
+        minx, miny, maxx, maxy = self.get_bounds()
+        self.translate((point[0] - maxx + self.get_centroid().x, point[1] + miny - self.get_centroid().y))
 
 
     def rotate(self, angle_degrees, origin='centroid'):
@@ -65,7 +75,7 @@ class Shape:
 
 
     def copy(self):
-        return copy.deepcopy(self)
+        return cp.deepcopy(self)
 
     @staticmethod
     def do_shapes_overlap(first_shape, second_shape):

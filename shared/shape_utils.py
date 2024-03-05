@@ -1,3 +1,4 @@
+import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 import numpy as np
@@ -89,10 +90,6 @@ def project_right(selected_point, knapsack):
     horizontal_line_right = LineString([(selected_point[0], selected_point[1]), (maxx, selected_point[1])])
     return find_intersections(horizontal_line_right, selected_point, knapsack)
 
-
-import matplotlib.pyplot as plt
-import matplotlib.colors as mcolors
-import numpy as np
 
 def visualize_knapsack_and_items(knapsack, items, title):
     # Create a plot to visualize the knapsack and items

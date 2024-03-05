@@ -1,6 +1,7 @@
+import json
+
 from shared.knapsack import *
 from shared.item import *
-import json
 
 def parse_problem_instance(json_path):
     with open(json_path, 'r') as file:

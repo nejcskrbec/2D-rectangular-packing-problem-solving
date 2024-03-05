@@ -150,7 +150,7 @@ def generate_placements_for_item(knapsack, item):
     placements = [
         Placement(item, angle.position, calculate_occupied_angles(knapsack, item, unique_angles))
         for angle in unique_angles
-        if knapsack.is_valid_placement(item, angle.position, 'left')
+        if knapsack.is_valid_placement(item, angle.position, 'bottom_left')
     ]
 
     return placements
@@ -169,13 +169,13 @@ def generate_candidate_aops(knapsack, items):
 
 
 def local_best_fit_first(knapsack, items):
-    knapsack_copy = copy.deepcopy(knapsack)
-    items_copy = copy.deepcopy(items)
+    knapsack_copy = cp.deepcopy(knapsack)
+    items_copy = cp.deepcopy(items)
 
     if len(knapsack_copy.items) == 0:
         item = items_copy[0]
         items_copy.remove(item)
-        knapsack_copy.add_item(item, (0,0), 'left')
+        knapsack_copy.add_item(item, (0,0), 'bottom_left')
 
     aop_max = None
     items_copy = sorted(items_copy, key=lambda item: item.shape.area)
@@ -189,32 +189,31 @@ def local_best_fit_first(knapsack, items):
         aop_max = max(candidate_aops, key=lambda p: (len(p.occupied_angles), -p.distance_from_origin()))
 
         # Add item to knapsack
-        knapsack_copy.add_item(aop_max.item, aop_max.position, 'left')
+        knapsack_copy.add_item(aop_max.item, aop_max.position, 'bottom_left')
 
         # Remove the placed item from the list of items
         items_copy.remove(aop_max.item)
 
         candidate_aops = generate_candidate_aops(knapsack_copy, items_copy)
 
-    # Return the items in the knapsack and the area occupied
-    return knapsack_copy.items, knapsack_copy.get_area()
+    return knapsack_copy.items, knapsack_copy.get_area() / (knapsack_copy.width * knapsack_copy.height)
 
 
 def BFHA_local(knapsack, items):
-    knapsack_copy = copy.deepcopy(knapsack)
-    items_copy = copy.deepcopy(items)
+    knapsack_copy = cp.deepcopy(knapsack)
+    items_copy = cp.deepcopy(items)
 
     M = sorted(items_copy, key=lambda item: item.shape.area, reverse=True)
     max_filling_rate = 0
     max_layout = []
 
-    M_copy = copy.deepcopy(M)
+    M_copy = cp.deepcopy(M)
 
     for item in M:
         M.remove(item)
 
         # Generate initial layout
-        items_copy.add_item(item, (0,0), 'left')
+        items_copy.add_item(item, (0,0), 'bottom_left')
 
         final_layout, filling_rate = local_best_fit_first(items_copy, M)
 
@@ -223,7 +222,7 @@ def BFHA_local(knapsack, items):
             max_layout = final_layout
         
         items_copy.items = []
-        M = copy.deepcopy(M_copy)
+        M = cp.deepcopy(M_copy)
 
     return max_layout, max_filling_rate
 
@@ -235,13 +234,13 @@ def local_best_fit_first_parallel(knapsack, items):
 
 
 def BFHA_local_optimized(knapsack, items):
-    knapsack_copy = copy.deepcopy(knapsack)
-    items_copy = copy.deepcopy(items)
+    knapsack_copy = cp.deepcopy(knapsack)
+    items_copy = cp.deepcopy(items)
 
     M = sorted(items_copy, key=lambda item: item.shape.area, reverse=True)
     max_filling_rate = 0
     max_layout = []
-    M_copy = copy.deepcopy(M)
+    M_copy = cp.deepcopy(M)
 
     # Create a process pool executor
     with concurrent.futures.ProcessPoolExecutor() as executor:
@@ -249,14 +248,14 @@ def BFHA_local_optimized(knapsack, items):
 
         for item in M:
             M.remove(item)
-            knapsack_copy.add_item(item, (0,0), 'left')
+            knapsack_copy.add_item(item, (0,0), 'bottom_left')
 
             # Submit the local_best_fit_first function to the executor
-            future = executor.submit(local_best_fit_first_parallel, copy.deepcopy(knapsack_copy), M)
+            future = executor.submit(local_best_fit_first_parallel, cp.deepcopy(knapsack_copy), M)
             futures.append(future)
 
             knapsack_copy.items = []
-            M = copy.deepcopy(M_copy)
+            M = cp.deepcopy(M_copy)
 
         # Collect the results as they are completed
         for future in concurrent.futures.as_completed(futures):
@@ -270,9 +269,9 @@ def BFHA_local_optimized(knapsack, items):
         
 
 def global_best_fit_first(knapsack, items, aop):
-    knapsack_copy = copy.deepcopy(knapsack)
-    items_copy = copy.deepcopy(items)
-    knapsack_copy.add_item(aop.item, aop.position, 'left')
+    knapsack_copy = cp.deepcopy(knapsack)
+    items_copy = cp.deepcopy(items)
+    knapsack_copy.add_item(aop.item, aop.position, 'bottom_left')
     items_copy.remove(aop.item)
     final_layout, filling_rate = local_best_fit_first(knapsack_copy, items_copy)
     return filling_rate
@@ -284,13 +283,13 @@ def BFHA(knapsack, items):
     max_filling_rate = 0
     max_layout = []
 
-    M_copy = copy.deepcopy(M)
+    M_copy = cp.deepcopy(M)
 
     for item in M:
         M.remove(item)
 
         # Generate initial layout
-        knapsack.add_item(item, (0,0), 'left')
+        knapsack.add_item(item, (0,0), 'bottom_left')
 
         # Generate candidate aops
         L = generate_candidate_aops(knapsack, M)
@@ -308,7 +307,7 @@ def BFHA(knapsack, items):
                     aop_max = aop
                 
             # Add item to knapsack
-            knapsack.add_item(aop_max.item, aop_max.position, 'left')
+            knapsack.add_item(aop_max.item, aop_max.position, 'bottom_left')
 
             # Remove the placed item from the list of items
             M.remove(aop_max.item)
@@ -322,7 +321,7 @@ def BFHA(knapsack, items):
             max_layout = knapsack.items
         
         knapsack.items = []
-        M = copy.deepcopy(M_copy)
+        M = cp.deepcopy(M_copy)
         L = []
 
     return max_layout, max_filling_rate

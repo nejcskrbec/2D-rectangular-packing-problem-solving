@@ -1,5 +1,6 @@
-from shapely.geometry import Polygon, LineString, MultiPoint, MultiPolygon, MultiLineString
 import numpy as np
+
+from shapely.geometry import Polygon, LineString, MultiPoint, MultiPolygon, MultiLineString
 
 from shared.shape_utils import *
 from shared.knapsack import *
@@ -93,11 +94,11 @@ def vertical_line_through_point_intersects_shape(knapsack, point, item):
         return True
 
     # Define edges
-    edges = {'left': [vertices[0], vertices[3]], 'right': [vertices[1], vertices[2]], 
+    edges = {'left': [vertices[0], vertices[3]], 'bottom_right': [vertices[1], vertices[2]], 
              'top': [vertices[2], vertices[3]], 'bottom': [vertices[0], vertices[1]]}
 
     # Opposite edges pairs
-    opposite_edges = [('left', 'right'), ('top', 'bottom')]
+    opposite_edges = [('left', 'bottom_right'), ('top', 'bottom')]
 
     # Check if any consecutive points are on opposite edges
     return any((point1 in edges[edge1] and point2 in edges[edge2]) 
@@ -107,7 +108,7 @@ def vertical_line_through_point_intersects_shape(knapsack, point, item):
 
 def is_valid_empty_space(knapsack, empty_space):
     if empty_space:
-        return knapsack.is_valid_placement(Item(empty_space.width, empty_space.height), empty_space.position, 'left')
+        return knapsack.is_valid_placement(Item(empty_space.width, empty_space.height), empty_space.position, 'bottom_left')
     else: 
         return False
 
@@ -235,14 +236,14 @@ def calculate_fitness(empty_space, items):
     return {item: fitness(item, empty_space) for item in items}
 
 def constructive_heuristic(knapsack, items):
-    knapsack_copy = copy.deepcopy(knapsack)
-    items_copy = copy.deepcopy(items)
+    knapsack_copy = cp.deepcopy(knapsack)
+    items_copy = cp.deepcopy(items)
 
     # Generate initial empty space
     empty_spaces = update_empty_spaces(knapsack_copy, [])
     s = empty_spaces[0]
 
-    while len(empty_spaces) > 0 and empty_spaces[0].position[1] < knapsack_copy.height:
+    while len(empty_spaces) > 0 and len(items_copy) > 0 and empty_spaces[0].position[1] < knapsack_copy.height:
         minimum_width = min(item.width for item in items_copy)
         s = empty_spaces[0]
         if s.width >= minimum_width:
@@ -252,14 +253,14 @@ def constructive_heuristic(knapsack, items):
                 if s.left >= s.right:
                     # Pack item at the bottom left vertex of the empty space (near the left wall)
                     packing_position = s.get_vertices()[0] 
-                    knapsack_copy.add_item(best_item, packing_position, 'left')
+                    knapsack_copy.add_item(best_item, packing_position, 'bottom_left')
                     items_copy.remove(best_item)
                     empty_spaces = update_empty_spaces(knapsack_copy, empty_spaces)
                     empty_spaces = sorted(empty_spaces, key=lambda space: distance_between_points(space.position, (0,0)))
                 else:
                     # Pack item at the bottom right vertex of the empty space (near the right wall)
                     packing_position = s.get_vertices()[1] 
-                    knapsack_copy.add_item(best_item, packing_position, 'right')
+                    knapsack_copy.add_item(best_item, packing_position, 'bottom_right')
                     items_copy.remove(best_item)
                     empty_spaces = update_empty_spaces(knapsack_copy, empty_spaces)
                     empty_spaces = sorted(empty_spaces, key=lambda space: distance_between_points(space.position, (0,0)))
@@ -269,4 +270,4 @@ def constructive_heuristic(knapsack, items):
         else:
             empty_spaces.remove(s)
     
-    return knapsack_copy.items, knapsack_copy.get_area()
+    return knapsack_copy.items, knapsack_copy.get_area() / (knapsack_copy.width * knapsack_copy.height)

@@ -1,7 +1,8 @@
+import numpy as np
+
 from shapely.geometry import Polygon, Point
 from shapely.ops import unary_union
 from itertools import *
-import numpy as np
 
 from shared.shape_utils import *
 from shared.shape import *
@@ -27,10 +28,14 @@ class Knapsack(Shape):
     
 
     def is_valid_placement(self, item, position, mode):
-        if mode == 'left':
+        if mode == 'bottom_left':
             item.place_bottom_left(position)
-        elif mode == 'right':
+        elif mode == 'top_left':
+            item.place_top_left(position)
+        elif mode == 'bottom_right':
             item.place_bottom_right(position)
+        elif mode == 'top_right':
+            item.place_top_right(position)
 
         if not Shape.does_shape_contain_other(self.shape, item.shape):
             return False
