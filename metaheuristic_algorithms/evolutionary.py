@@ -1,35 +1,41 @@
 import random as rd
 import bisect as bi
+import copy as cp
+import random as rd
+import itertools as iter
+import multiprocessing
 
+from functools import partial
 from shared.knapsack import *
 from shared.item import *
 
 class Individual:
     def __init__(self, items, knapsack, fitness_function, placement_function):
-        layout, score = placement_function(knapsack, items)
-        self.items = layout
-        self.score = score
-        self.fitness = fitness_function(self)
+        self.items = items
+        self.knapsack = knapsack
+        self.placement_function = placement_function
+        self.fitness_function = fitness_function
+        self.layout = []
+        self.score = 0
+        self.fitness = 0
+        self.calculated = False
+        self.calculate()
 
-    def __hash__(self):
-        # Hash based on the sequence of item dimensions, maintaining order
-        return hash(tuple((item.width, item.height) for item in self.items))
+    def calculate(self):
+        if self.calculated is False:
+            layout, score = self.placement_function(self.knapsack, self.items)
+            self.layout = layout
+            self.score = score
+            self.fitness = self.fitness_function(self)
+            self.calculated = True
 
-    def __eq__(self, other):
-        if len(self.items) != len(other.items):
-            return False 
-
-        return all(item1.width == item2.width and item1.height == item2.height
-                   for item1, item2 in zip(self.items, other.items))
-
-
-import copy as cp
-import random as rd
+def create_individual(items, knapsack, fitness_function, placement_function):
+    return Individual(list(items), knapsack, fitness_function, placement_function)
 
 class GA():
-    def __init__(self, knapsack, items, population_size, fitness_function, selection_function, crossover_function, mutation_function, mutation_rate, placement_function, stop_filling_rate, max_iterations):
-        self.knapsack = cp.deepcopy(knapsack)
-        self.items = cp.deepcopy(items)
+    def __init__(self, population_size, fitness_function, selection_function, crossover_function, mutation_function, mutation_rate, placement_function, stop_filling_rate, max_iterations, knapsack=None, items=None):
+        self.knapsack = cp.deepcopy(knapsack) if knapsack is not None else None
+        self.items = cp.deepcopy(items) if items is not None else None
         self.population_size = population_size
         self.fitness_function = fitness_function
         self.selection_function = selection_function
@@ -39,47 +45,81 @@ class GA():
         self.placement_function = placement_function
         self.stop_filling_rate = stop_filling_rate
         self.max_iterations = max_iterations
+        self.current_iteration = 1
+        self.generated_individuals = []
         self.population = []
 
-    def create_individual(self):
-        individual_items = rd.sample(self.items, rd.randint(1, len(self.items))) # Ensure variable length
-        return Individual(individual_items, self.knapsack, self.fitness_function, self.placement_function)
-
     def generate_population(self, initial_population):
-        # Convert initial_population to a set to avoid duplicates
-        current_population = set(initial_population)
+        items_copy = cp.deepcopy(self.items)
 
-        # Generate new individuals and add them to the set to maintain uniqueness
-        current_population |= {Individual(rd.sample(self.items, len(self.items)), self.knapsack, self.fitness_function, self.placement_function) 
-                            for _ in range(self.population_size - len(current_population))}
+        existing_permutations = {tuple(individual.items) for individual in self.generated_individuals}
+        permutations = set()
+        for _ in range(self.population_size - len(initial_population)):
+            rd.shuffle(items_copy)
+            perm = tuple(items_copy)
+            if perm not in existing_permutations:
+                existing_permutations.add(perm)
+                permutations.add(perm)
 
-        return sorted(list(current_population), key=lambda individual: individual.fitness, reverse=True)
+        # Use multiprocessing.Pool() for parallel execution of the constructor
+        with multiprocessing.Pool() as pool:
+            # Use partial to create a function with fixed arguments except for 'items'
+            create_individual_partial = partial(
+                create_individual,
+                knapsack=self.knapsack,
+                fitness_function=self.fitness_function,
+                placement_function=self.placement_function
+            )
+            # Execute constructor in parallel for each permutation of items
+            new_individuals = pool.map(create_individual_partial, permutations)
+
+        initial_population.extend(new_individuals)
+        self.generated_individuals.extend(initial_population)
+        self.population = sorted(initial_population, key=lambda x: x.fitness, reverse=True)
+
+
+    def merge_offspring(self, offspring):
+        self.population.extend(offspring)
+        self.generate_population(self.population)
+
 
     def execute(self):
-        self.population = self.generate_population([])
-        
-        for _ in range(self.max_iterations):            
-            if self.population[0].fitness >= self.stop_filling_rate:
+        if self.knapsack is None or self.items is None:
+            raise ValueError("Knapsack and items must be set before executing.")
+           
+        self.generate_population([])
+
+        best_individual = max(self.population, key=lambda individual: individual.score)
+
+        for _ in range(self.max_iterations):      
+            if best_individual.score >= self.stop_filling_rate or self.current_iteration == self.max_iterations:
                 break
 
             # Selection
-            selected_individuals = self.selection_function(self.population, self.population_size)
+            selected_individuals = self.selection_function(self.population)
 
             # Crossover (Reproduction)
             offspring = self.crossover_function(self, selected_individuals)
 
-            # Replace the old population with offspring
-            self.population = self.generate_population([])
-
-            # Mutation
-            for individual in offspring:
+            # Mutations
+            for index, individual in enumerate(offspring):
                 if rd.random() < self.mutation_rate:
-                    self.mutation_function(individual, self)
-            
-            self.population.sort(key=lambda individual: individual.fitness, reverse=True)
+                    mutated_individual = self.mutation_function(individual, self)
+                    self.population[index] = mutated_individual
 
-        return self.population[0].items, self.population[0].fitness
+            self.merge_offspring(offspring)
 
+            current_best_individual = max(self.population, key=lambda individual: individual.score)
+            if current_best_individual.score > best_individual.score:
+                best_individual = current_best_individual
+
+            self.current_iteration += 1
+
+        self.current_iteration = 1
+        self.generated_individuals = []
+        self.population = []
+
+        return best_individual.layout, best_individual.score
 
 
 ### Selection functions
@@ -102,15 +142,15 @@ def proportional_selection(population):
 
     return selected_individuals
     
-
-def roulette_wheel_selection_with_linear_scaling(population, target_average=35):
-    def linear_scaling(individuals, target_average):
+TARGET_AVERAGE=0.5
+def roulette_wheel_selection_with_linear_scaling(population):
+    def linear_scaling(individuals):
         fitness_values = [ind.fitness for ind in individuals]
         avg_fitness = sum(fitness_values) / len(fitness_values)
         max_fitness = max(fitness_values)
 
-        a = (target_average * (len(fitness_values) - 1)) / (max_fitness - avg_fitness) if max_fitness != avg_fitness else 0
-        b = target_average * (max_fitness - len(fitness_values) * avg_fitness) / (max_fitness - avg_fitness) if max_fitness != avg_fitness else avg_fitness
+        a = (TARGET_AVERAGE * (len(fitness_values) - 1)) / (max_fitness - avg_fitness) if max_fitness != avg_fitness else avg_fitness
+        b = TARGET_AVERAGE * (max_fitness - len(fitness_values) * avg_fitness) / (max_fitness - avg_fitness) if max_fitness != avg_fitness else 0
 
         return [max(a * f + b, 0) for f in fitness_values]  # Ensure fitness is non-negative
 
@@ -123,7 +163,7 @@ def roulette_wheel_selection_with_linear_scaling(population, target_average=35):
         index = bi.bisect_left(cumulative_probs, selection_point)
         return individuals[index]
 
-    scaled_fitness = linear_scaling(population, target_average)  # Apply linear scaling first
+    scaled_fitness = linear_scaling(population)  # Apply linear scaling first
     # Select individuals using roulette wheel selection multiple times
     selected_individuals = list({roulette_wheel_selection(scaled_fitness, population) for _ in range(100)})
     return selected_individuals
@@ -144,50 +184,53 @@ def ox3_crossover(parent_a, parent_b, instance):
     offspring_a = Individual(create_offspring_items(parent_a, parent_b), instance.knapsack, instance.fitness_function, instance.placement_function)
     offspring_b = Individual(create_offspring_items(parent_b, parent_a), instance.knapsack, instance.fitness_function, instance.placement_function)
 
-    if offspring_a.fitness > offspring_b.fitness:
-        return offspring_a
-    else:
-        return offspring_b
+    return offspring_a, offspring_b
 
 
 ### Mutation functions
 def m1_mutation(individual, instance):
-    knapsack = cp.deepcopy(instance.knapsack)
+    knapsack = cp.deepcopy(individual.knapsack)
+    original_items = cp.deepcopy(individual.items)
 
     # Simplify the calculation for max_number_of_elements and items_to_remove
-    max_number_of_elements = int(((instance.max_iterations - instance.current_iteration + 1) * len(individual.items)) / instance.max_iterations)
-    items_to_remove = min(rd.randint(0, max_number_of_elements), len(individual.items))
+    max_number_of_elements = int(((instance.max_iterations - instance.current_iteration) * len(individual.layout)) / instance.max_iterations)
+    items_to_remove = min(rd.randint(0, max_number_of_elements), len(individual.layout))
 
-    # Directly determine items to keep without explicitly calculating indices_to_remove
-    items_kept = rd.sample(individual.items, len(individual.items) - items_to_remove)
+    items_kept = rd.sample(individual.layout, len(individual.layout) - items_to_remove)
 
     # Determine items_to_fill using set operations for efficiency
-    items_to_fill = list(set(instance.items) - set(items_kept))
-    knapsack.items = items_kept
+    items_to_fill = list((set(individual.layout) - set(items_kept)) | (set(individual.items) - set(individual.layout)))
+    rd.shuffle(items_to_fill)
 
-    # Apply the placement function to the updated knapsack and update individual
-    mutated_layout, mutated_score = instance.placement_function(knapsack, items_to_fill)
-    individual.items = mutated_layout
-    individual.fitness = instance.fitness_function(individual)
+    if len(items_to_fill) > 0:
+        knapsack.items = items_kept
+        individual.knapsack = knapsack
+        individual.items = items_to_fill
+        individual.calculated = False
+        individual.calculate()
+        individual.items = original_items
 
     return individual
 
 def m3_mutation(individual, instance):
-
-    if len(instance.knapsack.items) == 0:
+    if len(individual.layout) == 0:
         return individual
         
-    knapsack = cp.deepcopy(instance.knapsack)
+    knapsack = cp.deepcopy(individual.knapsack)
+    original_items = cp.deepcopy(individual.items)
         
     # Randomly select the items to remove
-    max_number_of_elements = len(individual.items)
-    items_to_remove = rd.sample(individual.items, rd.randint(0, max_number_of_elements))
+    max_number_of_elements = len(individual.layout)
+    items_to_remove = rd.sample(individual.layout, rd.randint(0, max_number_of_elements))
 
     # Determine items to keep by subtracting items_to_remove from individual.items
-    items_kept = [item for item in individual.items if item not in items_to_remove]
+    items_kept = [item for item in individual.layout if item not in items_to_remove]
     knapsack.items = items_kept
 
     packing_vertices = list(set(knapsack.get_items_combined_shape_vertices()) - set(knapsack.get_vertices()))
+    if len(packing_vertices) == 0:
+        return individual
+
     placing_point = min(packing_vertices, key=lambda point: (point[1], point[0]))
 
     minx, miny, maxx, maxy = knapsack.get_bounds()
@@ -197,24 +240,28 @@ def m3_mutation(individual, instance):
     target_height = maxy - placing_point[1]
 
     # Filter items for horizontal fits and vertical fits
-    horizontal_fits = {item for item in instance.items if item.width == target_width}
-    vertical_fits = {item for item in instance.items if item.height == target_height}
-    items_that_fit = horizontal_fits.union(vertical_fits) - set(items_to_remove)
-    
+    horizontal_fits = {item for item in individual.layout if item.width == target_width}
+    vertical_fits = {item for item in individual.layout if item.height == target_height}
+    items_that_fit = list(horizontal_fits.union(vertical_fits) - set(items_to_remove))
+    rd.shuffle(items_that_fit)
+
     # Filter items which can be added later
-    items_to_fill = list((set(instance.items) - set(items_kept)) | set(items_to_remove))
+    items_to_fill = list((set(individual.layout) - set(items_kept)) | set(items_to_remove) )
     rd.shuffle(items_to_fill)
 
     if len(items_that_fit) > 0:
-        item_to_add = list(items_that_fit)[0]
-        instance.knapsack.add_item(item_to_add, placing_point, 'bottom_left')
+        item_to_add = items_that_fit[0]
+        individual.knapsack.add_item(item_to_add, placing_point, 'bottom_left')
         if item_to_add in items_to_fill: 
             items_to_fill.remove(item_to_add)
 
     # Apply the placement function to the updated knapsack and update individual
-    mutated_layout, mutated_score = instance.placement_function(knapsack, items_to_fill)
-    individual.items = mutated_layout
-    individual.fitness = instance.fitness_function(individual)
+    knapsack.items = items_kept
+    individual.knapsack = knapsack
+    individual.items = items_to_fill
+    individual.calculated = False
+    individual.calculate()
+    individual.items = original_items
 
     return individual
 
@@ -229,9 +276,33 @@ def m1_m3_mutation(individual, instance):
 
 
 ### Reproduction functions
+ELITE_SIZE = 10
 def ox3_crossover_reproduction(instance, current_population):
-    pairs = [(current_population[i], current_population[i + 1]) for i in range(0, len(current_population) - 1, 2)]
-    return list({ox3_crossover(pair[0], pair[1], instance) for pair in pairs})
+    # Select top ELITE_SIZE individuals for reproduction
+    top_individuals = instance.population[:ELITE_SIZE]
+
+    # Create pairs for crossover
+    pairs = [(top_individuals[i], top_individuals[i + 1]) for i in range(0, len(top_individuals) - 1, 2)]
+
+    # Use multiprocessing.Pool to construct all_tuples in parallel
+    with multiprocessing.Pool() as pool:
+        all_tuples = pool.starmap(ox3_crossover, [(pair[0], pair[1], instance) for pair in pairs])
+
+    # Flatten the list of tuples
+    individuals = list(chain(*all_tuples))
+
+    # Reconstruct pairs
+    reconstructed_pairs = [(individuals[i], individuals[i + 1]) for i in range(0, len(individuals) - 1, 2)]
+
+    # Select individuals with higher fitness from each pair
+    higher_fitness_individuals = [
+        pair[0] if pair[0].fitness > pair[1].fitness else pair[1]
+        for pair in reconstructed_pairs
+    ]
+
+    instance.population = instance.population[ELITE_SIZE:]
+
+    return higher_fitness_individuals
 
 
 ### Fitness functions
@@ -240,4 +311,4 @@ def basic_fitness(individual):
 
 
 def num_of_items_fitness(individual):
-    return individual.score - 0.2 * len(individual.items)
+    return individual.score - 0.02 * len(individual.layout)

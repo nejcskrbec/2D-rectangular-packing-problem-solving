@@ -66,7 +66,7 @@ class Placement:
         return hash((self.position, self.item, self.type))
 
 
-def get_placements_with_touching_perimiters(knapsack, item):
+def get_placements_with_touching_perimeters(knapsack, item):
     current_packing_vertices = list(set(knapsack.get_items_combined_shape_vertices() + knapsack.get_vertices()))
 
     placements_bottom_left = [Placement(item, position, knapsack, 'bottom_left') for position in current_packing_vertices 
@@ -81,7 +81,7 @@ def get_placements_with_touching_perimiters(knapsack, item):
     return placements_bottom_left + placements_top_left + placements_bottom_right + placements_top_right
 
 
-def touching_perimiter_heuristic(knapsack, items):
+def touching_perimeter_heuristic(knapsack, items):
     knapsack_copy = cp.deepcopy(knapsack)
     items_copy = cp.deepcopy(items)
 
@@ -89,7 +89,7 @@ def touching_perimiter_heuristic(knapsack, items):
 
     while len(items_copy) > 0 and not set(items_copy).issubset(unpackable_items):
         item = items_copy[0]
-        all_valid_placements = get_placements_with_touching_perimiters(knapsack_copy, item)
+        all_valid_placements = get_placements_with_touching_perimeters(knapsack_copy, item)
         
         if not all_valid_placements:
             unpackable_items.add(item)

@@ -116,11 +116,14 @@ def is_valid_empty_space(knapsack, empty_space):
 def update_empty_spaces(knapsack, empty_spaces):
     """Function that accepts the current list of empty spaces and updates it based on the current placement of items in the knapsack."""
 
+    # Filter out none spaces
+    empty_spaces = [space for space in empty_spaces if space is not None ]
+
     ## FIRST STEP: Generate new empty spaces
     minx, miny, maxx, maxy = knapsack.get_bounds()
 
     # If we have an empty knapsack
-    if not knapsack.items:
+    if not knapsack.items or len(knapsack.items) == 0:
         return [Space((0,0), knapsack.width, knapsack.height, (minx, maxy), (maxx, maxy))]
 
     item = knapsack.items[-1]
@@ -133,7 +136,7 @@ def update_empty_spaces(knapsack, empty_spaces):
 
     # If we have one item in the knapsack
     if len(knapsack.items) == 1:
-        return [space_1, space_2]
+        return [space for space in [space_1, space_2] if space is not None ]
 
     # If we have more than one item in the knapsack
     # Filter valid spaces
@@ -193,14 +196,23 @@ def update_empty_spaces(knapsack, empty_spaces):
         if Shape.do_any_shapes_overlap([all_spaces[i].shape for i in np.where((coordinates[:, 0] == coord[0]) | (coordinates[:, 1] == coord[1]))[0]])
     ]
 
-    # Update filtered_spaces using list comprehension
+    # Find all spaces that are included in some group
+    included_spaces = {space for group in overlapping_groups for space in group}
+
+    # Find all spaces not included in any group
+    excluded_spaces = [space for space in all_spaces if space not in included_spaces]
+
+    # Add each excluded space as a single-element group to overlapping_groups
+    overlapping_groups.extend([[space] for space in excluded_spaces])
+
+    # Step 4: The rest of your filtering code would remain the same
     filtered_spaces = [
         space for space in filtered_spaces
         if not any(space in group and space != group[np.argmax([areas[all_spaces.index(gs)] for gs in group])] 
-                   for group in overlapping_groups)
+                for group in overlapping_groups)
     ]
 
-    return filtered_spaces
+    return sorted([space for space in filtered_spaces if space is not None ], key=lambda space: space.position[0]**2 + space.position[1]**2)
                 
 
 def fitness(item, empty_space):
@@ -241,33 +253,35 @@ def constructive_heuristic(knapsack, items):
 
     # Generate initial empty space
     empty_spaces = update_empty_spaces(knapsack_copy, [])
-    s = empty_spaces[0]
-
-    while len(empty_spaces) > 0 and len(items_copy) > 0 and empty_spaces[0].position[1] < knapsack_copy.height:
-        minimum_width = min(item.width for item in items_copy)
+    
+    if len(empty_spaces) > 0:
         s = empty_spaces[0]
-        if s.width >= minimum_width:
-            fitness_scores = calculate_fitness(s, items_copy)
-            best_item = max(fitness_scores, key=fitness_scores.get)
-            if fitness_scores[best_item] >= 0:
-                if s.left >= s.right:
-                    # Pack item at the bottom left vertex of the empty space (near the left wall)
-                    packing_position = s.get_vertices()[0] 
-                    knapsack_copy.add_item(best_item, packing_position, 'bottom_left')
-                    items_copy.remove(best_item)
-                    empty_spaces = update_empty_spaces(knapsack_copy, empty_spaces)
-                    empty_spaces = sorted(empty_spaces, key=lambda space: distance_between_points(space.position, (0,0)))
+
+        while len(empty_spaces) > 0 and len(items_copy) > 0 and empty_spaces[0].position[1] < knapsack_copy.height:
+            minimum_width = min(item.width for item in items_copy)
+            s = empty_spaces[0]
+            if s.width >= minimum_width:
+                fitness_scores = calculate_fitness(s, items_copy)
+                best_item = max(fitness_scores, key=fitness_scores.get)
+                if fitness_scores[best_item] >= 0:
+                    if s.left >= s.right:
+                        # Pack item at the bottom left vertex of the empty space (near the left wall)
+                        packing_position = s.get_vertices()[0] 
+                        knapsack_copy.add_item(best_item, packing_position, 'bottom_left')
+                        items_copy.remove(best_item)
+                        empty_spaces = update_empty_spaces(knapsack_copy, empty_spaces)
+                        empty_spaces = sorted(empty_spaces, key=lambda space: distance_between_points(space.position, (0,0)))
+                    else:
+                        # Pack item at the bottom right vertex of the empty space (near the right wall)
+                        packing_position = s.get_vertices()[1] 
+                        knapsack_copy.add_item(best_item, packing_position, 'bottom_right')
+                        items_copy.remove(best_item)
+                        empty_spaces = update_empty_spaces(knapsack_copy, empty_spaces)
+                        empty_spaces = sorted(empty_spaces, key=lambda space: distance_between_points(space.position, (0,0)))
                 else:
-                    # Pack item at the bottom right vertex of the empty space (near the right wall)
-                    packing_position = s.get_vertices()[1] 
-                    knapsack_copy.add_item(best_item, packing_position, 'bottom_right')
-                    items_copy.remove(best_item)
-                    empty_spaces = update_empty_spaces(knapsack_copy, empty_spaces)
+                    empty_spaces.remove(s)
                     empty_spaces = sorted(empty_spaces, key=lambda space: distance_between_points(space.position, (0,0)))
             else:
                 empty_spaces.remove(s)
-                empty_spaces = sorted(empty_spaces, key=lambda space: distance_between_points(space.position, (0,0)))
-        else:
-            empty_spaces.remove(s)
     
     return knapsack_copy.items, knapsack_copy.get_area() / (knapsack_copy.width * knapsack_copy.height)

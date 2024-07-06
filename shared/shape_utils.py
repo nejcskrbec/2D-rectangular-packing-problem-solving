@@ -1,9 +1,11 @@
 import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
 import matplotlib.cm as cm
 import numpy as np
 
 from shapely.geometry import Polygon, LineString, MultiPoint, MultiPolygon, MultiLineString, Point
+from matplotlib.gridspec import GridSpec
 from math import sqrt
 
 def distance_between_points(point1, point2):
@@ -127,4 +129,54 @@ def visualize_knapsack_and_items(knapsack, items, title):
 
     # Show the plot
     plt.show()
+
+
+def visualize_knapsacks_and_items(knapsacks_with_items, titles):
+    num_knapsacks = len(knapsacks_with_items)
+    cols = min(4, num_knapsacks)  # Ensure a maximum of 5 columns
+    rows = (num_knapsacks + cols - 1) // cols  # Calculate required rows
+    
+    fig, axs = plt.subplots(rows, cols, figsize=(5*cols, 5*rows), squeeze=False)
+    
+    for i, ((knapsack, items), title) in enumerate(zip(knapsacks_with_items, titles)):
+        row, col = divmod(i, cols)
+        ax = axs[row, col]
+
+        # Set the title for each subplot
+        ax.set_title(title, fontsize=15, pad=5)  # pad=3 for a little space between the title and the plot
+        
+        ax.plot(*knapsack.shape.exterior.xy, color='black', linewidth=1)
+        
+        original_cmap = plt.cm.viridis
+        colors = original_cmap(np.linspace(0.33, 0.66, 256))
+        cmap = mcolors.LinearSegmentedColormap.from_list("viridis_middle", colors)
+        norm = plt.Normalize(min([item.shape.area for item in items]), max([item.shape.area for item in items]))
+        
+        for item in items:
+            normalized_area = norm(item.shape.area)
+            ax.fill(*item.shape.exterior.xy, color=cmap(normalized_area), edgecolor=cmap(normalized_area/2))
+        
+        # Set axes spines to white to effectively hide them
+        for spine in ax.spines.values():
+            spine.set_edgecolor('white')
+        
+        # Hide tick marks and labels
+        ax.tick_params(colors='white', which='both')
+        
+        # Set the aspect ratio
+        ax.set_aspect('equal', 'box')
+        
+        # Set x-axis label with visible color
+        filling_rate = (sum(item.shape.area for item in items) / knapsack.shape.area) * 100
+        ax.set_xlabel(f'Zapolnjenost: {round(filling_rate)}%', fontsize=15, color='black')
+        
+        # Ensure the label is positioned correctly and visible
+        ax.xaxis.label.set_visible(True)
+
+    # Remove unused subplots
+    for j in range(i+1, rows*cols):
+        axs.flatten()[j].set_visible(False)
+        
+    plt.tight_layout(pad=3.0, h_pad=3.0, w_pad=3.0)  # Adjust padding and spacing as needed
+    return plt
 

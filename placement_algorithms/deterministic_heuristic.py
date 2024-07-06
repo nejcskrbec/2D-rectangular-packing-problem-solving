@@ -1,10 +1,10 @@
-import concurrent.futures
 import numpy as np
 
 from shared.shape_utils import *
 from shared.knapsack import *
 from shared.item import *
 from math import sqrt
+
 
 class Angle:
     def __init__(self, position):
@@ -167,15 +167,17 @@ def generate_candidate_aops(knapsack, items):
 
     return candidate_aops
 
-
 def local_best_fit_first(knapsack, items):
     knapsack_copy = cp.deepcopy(knapsack)
     items_copy = cp.deepcopy(items)
 
     if len(knapsack_copy.items) == 0:
-        item = items_copy[0]
-        items_copy.remove(item)
-        knapsack_copy.add_item(item, (0,0), 'bottom_left')
+        # Find the first item with height less or equal to knapsack's height
+        item = next((item for item in items_copy if item.height <= knapsack_copy.height), None)
+        # Check if a suitable item was found
+        if item:
+            items_copy.remove(item)
+            knapsack_copy.add_item(item, (0, 0), 'bottom_left')
 
     aop_max = None
     items_copy = sorted(items_copy, key=lambda item: item.shape.area)
@@ -199,82 +201,13 @@ def local_best_fit_first(knapsack, items):
     return knapsack_copy.items, knapsack_copy.get_area() / (knapsack_copy.width * knapsack_copy.height)
 
 
-def BFHA_local(knapsack, items):
-    knapsack_copy = cp.deepcopy(knapsack)
-    items_copy = cp.deepcopy(items)
-
-    M = sorted(items_copy, key=lambda item: item.shape.area, reverse=True)
-    max_filling_rate = 0
-    max_layout = []
-
-    M_copy = cp.deepcopy(M)
-
-    for item in M:
-        M.remove(item)
-
-        # Generate initial layout
-        items_copy.add_item(item, (0,0), 'bottom_left')
-
-        final_layout, filling_rate = local_best_fit_first(items_copy, M)
-
-        if filling_rate > max_filling_rate:
-            max_filling_rate = filling_rate
-            max_layout = final_layout
-        
-        items_copy.items = []
-        M = cp.deepcopy(M_copy)
-
-    return max_layout, max_filling_rate
-
-
-def local_best_fit_first_parallel(knapsack, items):
-    # This is a wrapper function for local_best_fit_first to be used with multiprocessing.
-    # It needs to be at the top level (not nested) for multiprocessing to work properly.
-    return local_best_fit_first(knapsack, items)
-
-
-def BFHA_local_optimized(knapsack, items):
-    knapsack_copy = cp.deepcopy(knapsack)
-    items_copy = cp.deepcopy(items)
-
-    M = sorted(items_copy, key=lambda item: item.shape.area, reverse=True)
-    max_filling_rate = 0
-    max_layout = []
-    M_copy = cp.deepcopy(M)
-
-    # Create a process pool executor
-    with concurrent.futures.ProcessPoolExecutor() as executor:
-        futures = []
-
-        for item in M:
-            M.remove(item)
-            knapsack_copy.add_item(item, (0,0), 'bottom_left')
-
-            # Submit the local_best_fit_first function to the executor
-            future = executor.submit(local_best_fit_first_parallel, cp.deepcopy(knapsack_copy), M)
-            futures.append(future)
-
-            knapsack_copy.items = []
-            M = cp.deepcopy(M_copy)
-
-        # Collect the results as they are completed
-        for future in concurrent.futures.as_completed(futures):
-            final_layout, filling_rate = future.result()
-
-            if filling_rate > max_filling_rate:
-                max_filling_rate = filling_rate
-                max_layout = final_layout
-
-    return max_layout, max_filling_rate
-        
-
 def global_best_fit_first(knapsack, items, aop):
     knapsack_copy = cp.deepcopy(knapsack)
     items_copy = cp.deepcopy(items)
     knapsack_copy.add_item(aop.item, aop.position, 'bottom_left')
     items_copy.remove(aop.item)
     final_layout, filling_rate = local_best_fit_first(knapsack_copy, items_copy)
-    return filling_rate
+    return final_layout, filling_rate
 
 
 def BFHA(knapsack, items):
@@ -298,7 +231,7 @@ def BFHA(knapsack, items):
             max_benefit = 0
             aop_max = None
             for aop in L:
-                benefit = global_best_fit_first(knapsack, M, aop)
+                layout, benefit = global_best_fit_first(knapsack, M, aop)
                 if aop_max is not None:
                     if benefit > max_benefit:
                         max_benefit = benefit
